@@ -43,13 +43,13 @@ RUN apt -y install ./jellyfin-ffmpeg_4.4.1-4-buster.deb
 RUN rm jellyfin-ffmpeg_4.4.1-4-buster.deb
 
 # RUN apt install -y bash
-COPY download_server.sh download_server.sh
+# COPY download_server.sh download_server.sh
 # RUN /bin/bash -c download_server.sh
-RUN ./download_server.sh
+# RUN ./download_server.sh
 
 # This copy could will override the server.js that was downloaded with the one provided in this folder
 # for custom or manual builds if $VERSION argument is not empty.
-# COPY server.js server.js
+COPY server.js server.js
 
 VOLUME ["/root/.stremio-server"]
 
