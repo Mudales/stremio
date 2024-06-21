@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  stremio:
+    build: .
+    ports:
+      - "11470:11470"
+      - "12470:12470"
+    command: -d
