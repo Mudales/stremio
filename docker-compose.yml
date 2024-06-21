@@ -7,3 +7,4 @@ services:
       - "11470:11470"
       - "12470:12470"
     command: -d
+    restart: always
