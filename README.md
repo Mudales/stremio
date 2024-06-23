@@ -4,5 +4,8 @@
 git clone https://github.com/refa3211/stremio.git
 ```
 ```
+cd .\stremio\
+```
+```
 docker-compose up --build
 ```
