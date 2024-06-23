@@ -10,7 +10,7 @@ git clone https://github.com/refa3211/stremio.git
 docker-compose up --build
 ```
 
-# after
+## after
 
 with browser goto:
 
