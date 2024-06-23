@@ -12,5 +12,6 @@ docker-compose up --build
 
 # after
 
-with browser goto:\n
+with browser goto:
+
 https://[ip docker-server]:12470
