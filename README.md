@@ -9,3 +9,8 @@ git clone https://github.com/refa3211/stremio.git
 ```
 docker-compose up --build
 ```
+
+# after
+
+with browser goto:
+https://<ip docker-server>:12470
