@@ -14,7 +14,7 @@ docker-compose up --build
 
 with browser goto:
 
-https://[ip docker-server]:12470
+https://[ip docker-server]:443
 
 * ip address only
 https://localhost:12470
