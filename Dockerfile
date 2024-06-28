@@ -57,7 +57,8 @@ VOLUME ["/root/.stremio-server"]
 EXPOSE 11470
 
 # HTTPS
-EXPOSE 12470
+# EXPOSE 12470
+EXPOSE 443
 
 # full path to the ffmpeg binary
 ENV FFMPEG_BIN=

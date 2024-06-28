@@ -5,6 +5,7 @@ services:
     build: .
     ports:
       - "11470:11470"
-      - "12470:12470"
+      # - "12470:12470"
+      - "443:443"
     command: -d
     restart: always
