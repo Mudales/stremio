@@ -58,7 +58,7 @@ EXPOSE 11470
 
 # HTTPS
 # EXPOSE 12470
-EXPOSE 443
+EXPOSE 12470
 
 # full path to the ffmpeg binary
 ENV FFMPEG_BIN=
