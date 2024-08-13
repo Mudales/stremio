@@ -17,5 +17,11 @@ with browser goto:
 https://<'your IP address'>:443
 
 * ip address only
-https://localhost:12470
-wont work
+
+if you do not have account 
+create one 
+https://www.stremio.com/register
+
+and install this addon 
+https://torrentio.strem.fun/configure
+
