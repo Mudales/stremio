@@ -10,16 +10,15 @@ git clone https://github.com/refa3211/stremio.git
 docker-compose up --build
 ```
 
-## after
+## when Docker is running
 
 with browser goto:
 
-https://<'your IP address'>:443
+* https://<'your IP address'>:443
 
-* ip address only
 
 if you do not have account 
-create one 
+create one at this link
 https://www.stremio.com/register
 
 and install this addon 
