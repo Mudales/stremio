@@ -6,12 +6,6 @@ ARG NODE_VERSION=14
 FROM node:$NODE_VERSION
 
 ARG VERSION=master
-# Which build to download for the image,
-# possible values are: desktop, android, androidtv, webos and tizen
-# webos and tizen require older versions of node:
-# - Node.js `v0.12.2` for WebOS 3.0 (2016 LG TV)
-# - Node.js `v4.4.3` for Tizen 3.0 (2017 Samsung TV)
-# But, as of writing this, we only support desktop!
 ARG BUILD=desktop
 
 LABEL com.stremio.vendor="Smart Code Ltd."
@@ -24,56 +18,58 @@ CMD ["bash"]
 
 WORKDIR /stremio
 
-RUN mkdir ssl && \
+# Install patch utility along with other dependencies
+RUN apt -y update && \
+    apt -y install wget patch && \
+    mkdir ssl && \
     openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout ssl/server.key -out ssl/server.crt -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*"
 
-# We require version <= 4.4.1
-# https://github.com/jellyfin/jellyfin-ffmpeg/releases/tag/v4.4.1-4
+# Install jellyfin-ffmpeg
 ARG JELLYFIN_VERSION=4.4.1-4
+RUN wget https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg_4.4.1-4-buster_$(dpkg --print-architecture).deb -O jellyfin-ffmpeg_4.4.1-4-buster.deb && \
+    apt -y install ./jellyfin-ffmpeg_4.4.1-4-buster.deb && \
+    rm jellyfin-ffmpeg_4.4.1-4-buster.deb
 
-# SHELL ["/bin/bash", "-c"]
+COPY download_server.sh download_server.sh
+RUN chmod +x download_server.sh && \
+    ./download_server.sh
 
-# COPY qemu-arm-static /usr/bin/qemu-arm-static
+# Create patch file
+RUN echo '--- server.js\n\
++++ server.js\n\
+@@ -1 +1,13 @@\n\
+-        var sserver = https.createServer(app);\n\
++           try {\n\
++                   var fs = require('\''fs'\'');\n\
++                   var https = require('\''https'\'');\n\
++                   _cr = {\n\
++                           key: fs.readFileSync('\''./ssl/server.key'\'', '\''utf8'\''),\n\
++                           cert: fs.readFileSync('\''./ssl/server.crt'\'', '\''utf8'\'')\n\
++                   };\n\
++           } catch (e) {\n\
++                   console.error("Failed to load SSL cert:", e);\n\
++                   _cr = { };\n\
++           }\n\
++           var sserver = https.createServer(_cr, app);' > ssl.patch
 
-
-# RUN apt update and install wget
-RUN apt -y update && apt -y install wget
-RUN wget https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg_4.4.1-4-buster_$(dpkg --print-architecture).deb -O jellyfin-ffmpeg_4.4.1-4-buster.deb
-RUN apt -y install ./jellyfin-ffmpeg_4.4.1-4-buster.deb
-RUN rm jellyfin-ffmpeg_4.4.1-4-buster.deb
-
-# RUN apt install -y bash
-# COPY download_server.sh download_server.sh
-# RUN /bin/bash -c download_server.sh
-# RUN ./download_server.sh
-
-# This copy could will override the server.js that was downloaded with the one provided in this folder
-# for custom or manual builds if $VERSION argument is not empty.
-COPY server.js server.js
+# Create entrypoint script
+RUN echo '#!/bin/sh\n\
+patch /stremio/server.js /stremio/ssl.patch\n\
+exec node server.js' > /stremio/entrypoint.sh && \
+    chmod +x /stremio/entrypoint.sh
 
 VOLUME ["/root/.stremio-server"]
 
 # HTTP
 EXPOSE 11470
-
 # HTTPS
-# EXPOSE 12470
 EXPOSE 12470
 
-# full path to the ffmpeg binary
+# Environment variables
 ENV FFMPEG_BIN=
-
-# full path to the ffprobe binary
 ENV FFPROBE_BIN=
-
-# Custom application path for storing server settings, certificates, etc
 ENV APP_PATH=
-
-# Use `NO_CORS=1` to disable the server's CORS checks
 ENV NO_CORS=
-
-# "Docker image shouldn't attempt to find network devices or local video players."
-# See: https://github.com/Stremio/server-docker/issues/7
 ENV CASTING_DISABLED=1
 
-ENTRYPOINT [ "node", "server.js" ]
+ENTRYPOINT ["/stremio/entrypoint.sh"]
