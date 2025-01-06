@@ -13,12 +13,16 @@ LABEL description="Stremio's streaming Server"
 WORKDIR /stremio
 
 # Install dependencies
-RUN apt -y update && \
-    apt -y install wget patch && \
+RUN apt -y update && apt -y install --no-install-recommends wget patch && \
     mkdir ssl && \
     openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
     -keyout ssl/server.key -out ssl/server.crt \
-    -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*"
+    -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*" && \
+    wget https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg_4.4.1-4-buster_$(dpkg --print-architecture).deb \
+    -O jellyfin-ffmpeg.deb && \
+    apt -y install --no-install-recommends ./jellyfin-ffmpeg.deb && \
+    rm jellyfin-ffmpeg.deb && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install jellyfin-ffmpeg
 ARG JELLYFIN_VERSION=4.4.1-4
