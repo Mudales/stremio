@@ -31,28 +31,10 @@ RUN wget https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg
 RUN wget -O server.js $(wget -qO- https://raw.githubusercontent.com/Stremio/stremio-shell/master/server-url.txt)
 
 # Create patch file
-RUN echo '--- server.js\n\
-+++ server.js\n\
-@@ -1 +1,13 @@\n\
--        var sserver = https.createServer(app);\n\
-+        try {\n\
-+                var fs = require('\''fs'\'');\n\
-+                var https = require('\''https'\'');\n\
-+                _cr = {\n\
-+                        key: fs.readFileSync('\''./ssl/server.key'\'', '\''utf8'\''),\n\
-+                        cert: fs.readFileSync('\''./ssl/server.crt'\'', '\''utf8'\'')\n\
-+                };\n\
-+        } catch (e) {\n\
-+                console.error("Failed to load SSL cert:", e);\n\
-+                _cr = { };\n\
-+        }\n\
-+        var sserver = https.createServer(_cr, app);' > ssl.patch
+RUN python3 -c "replacement = '''        try {\n            var fs = require('fs');\n            var https = require('https');\n            _cr = {\n                key: fs.readFileSync('./ssl/server.key', 'utf8'),\n                cert: fs.readFileSync('./ssl/server.crt', 'utf8')\n            };\n        } catch (e) {\n            console.error('Failed to load SSL cert:', e);\n            _cr = { };\n        }\n        var sserver = https.createServer(_cr, app);'''\nwith open('server.js', 'r') as file:\n    lines = file.readlines()\nwith open('server.js', 'w') as file:\n    for line in lines:\n        if 'var sserver = https.createServer(app);' in line:\n            file.write(replacement + '\\n')\n        else:\n            file.write(line)"
 
-# Create entrypoint script
-RUN echo '#!/bin/sh\n\
-patch /stremio/server.js /stremio/ssl.patch\n\
-exec node server.js' > /stremio/entrypoint.sh && \
-    chmod +x /stremio/entrypoint.sh
+
+
 
 VOLUME ["/root/.stremio-server"]
 
@@ -66,4 +48,4 @@ ENV FFMPEG_BIN=/usr/lib/jellyfin-ffmpeg/ffmpeg
 ENV FFPROBE_BIN=/usr/lib/jellyfin-ffmpeg/ffprobe
 ENV CASTING_DISABLED=1
 
-ENTRYPOINT ["/stremio/entrypoint.sh"]
+ENTRYPOINT ["node", "server.js"]
