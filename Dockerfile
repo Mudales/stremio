@@ -37,6 +37,7 @@ RUN wget $(wget -O- https://raw.githubusercontent.com/Stremio/stremio-shell/mast
 
 # Create patch file
 COPY ssl.patch ssl.patch
+COPY test.patch test.patch
 
 # Create entrypoint script
 RUN echo '#!/bin/sh\n\
