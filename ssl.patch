@@ -1,16 +1,19 @@
---- server.js
-+++ server.js
-@@ -43888 +43888,12 @@
--           var sserver = https.createServer(app); 
-+           try {
-+               var fs = require('fs');
-+               var https = require('https');
-+               _cr = {
-+                   key: fs.readFileSync('./ssl/server.key', 'utf8'),
-+                   cert: fs.readFileSync('./ssl/server.crt', 'utf8')
-+               };
-+           } catch (e) {
-+               console.error("Failed to load SSL cert:", e);
-+               _cr = { };
-+           }
-+           var sserver = https.createServer(_cr, app);
+--- server.js   2025-01-06 12:00:47.729938184 +0000
++++ server-up.js        2025-01-06 13:18:48.096807100 +0000
+@@ -43885,7 +43885,18 @@
+             appPath: appPath,
+             apiEndpoint: apiCertifficateEndpoint
+         });
+-        var sserver = https.createServer(app);
++        try {
++            var fs = require('fs');
++            var https = require('https');
++            _cr = {
++                key: fs.readFileSync('./ssl/server.key', 'utf8'),
++                cert: fs.readFileSync('./ssl/server.crt', 'utf8')
++            };
++        } catch (e) {
++            console.error("Failed to load SSL cert:", e);
++            _cr = {};
++        }
++        var sserver = https.createServer(_cr, app);
