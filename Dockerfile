@@ -31,7 +31,8 @@ RUN wget https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg
     rm jellyfin-ffmpeg_4.4.1-4-buster.deb
 
 COPY download_server.sh download_server.sh
-RUN ./download_server.sh
+RUN chmod +x download_server.sh && \
+    ./download_server.sh
 
 # Create patch file
 RUN echo '--- server.js\n\
