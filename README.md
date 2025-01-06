@@ -24,3 +24,5 @@ https://www.stremio.com/register
 and install this addon 
 https://torrentio.strem.fun/configure
 
+source of the fix
+https://github.com/Stremio/stremio-service/issues/39#issuecomment-1988694509
