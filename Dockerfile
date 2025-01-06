@@ -32,17 +32,17 @@ RUN wget https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg
 
 RUN wget $(wget -O- https://raw.githubusercontent.com/Stremio/stremio-shell/master/server-url.txt) 
 
-RUN sed -i '43888s|.*|try {\n    var fs = require('"'"'fs'"'"');\n    var https = require('"'"'https'"'"');\n    _cr = {\n        key: fs.readFileSync('"'"'./ssl/server.key'"'"', '"'"'utf8'"'"'),\n        cert: fs.readFileSync('"'"'./ssl/server.crt'"'"', '"'"'utf8'"'"')\n    };\n} catch (e) {\n    console.error("Failed to load SSL cert:", e);\n    _cr = { };\n}\nvar sserver = https.createServer(_cr, app);|' server.js
+# RUN sed -i '43888s|.*|try {\n    var fs = require('"'"'fs'"'"');\n    var https = require('"'"'https'"'"');\n    _cr = {\n        key: fs.readFileSync('"'"'./ssl/server.key'"'"', '"'"'utf8'"'"'),\n        cert: fs.readFileSync('"'"'./ssl/server.crt'"'"', '"'"'utf8'"'"')\n    };\n} catch (e) {\n    console.error("Failed to load SSL cert:", e);\n    _cr = { };\n}\nvar sserver = https.createServer(_cr, app);|' server.js
 
 
 # Create patch file
-# COPY ssl.patch ssl.patch
+COPY ssl.patch ssl.patch
 
-# # Create entrypoint script
-# RUN echo '#!/bin/sh\n\
-# patch server.js ssl.patch\n\
-# exec node server.js' > /entrypoint.sh && \
-#     chmod +x /entrypoint.sh
+# Create entrypoint script
+RUN echo '#!/bin/sh\n\
+patch server.js ssl.patch\n\
+exec node server.js' > /entrypoint.sh && \
+    chmod +x /entrypoint.sh
 
 VOLUME ["/root/.stremio-server"]
 

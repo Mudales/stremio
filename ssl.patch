@@ -1,22 +1,15 @@
---- server.js
-+++ server-up.js
-@@ -43885,7 +43885,18 @@
-             appPath: appPath,
-             apiEndpoint: apiCertifficateEndpoint
-         });
--        var sserver = https.createServer(app);
-+        try {
-+            var fs = require('fs');
-+            var https = require('https');
-+            _cr = {
-+                key: fs.readFileSync('./ssl/server.key', 'utf8'),
-+                cert: fs.readFileSync('./ssl/server.crt', 'utf8')
-+            };
-+        } catch (e) {
-+            console.error("Failed to load SSL cert:", e);
-+            _cr = {};
-+        }
-+        var sserver = https.createServer(_cr, app);
-         if (sserver.listen(12470), sserver.on("listening", (function() {
-             console.log("EngineFS HTTPS endpoint at https://local.strem.io:12470");
-         })), sserver.on("error", (function(err) {
+43888c43888,43899
+<         var sserver = https.createServer(app);
+---
+>         try {
+>             var fs = require('fs');
+>             var https = require('https');
+>             _cr = {
+>                 key: fs.readFileSync('./ssl/server.key', 'utf8'),
+>                 cert: fs.readFileSync('./ssl/server.crt', 'utf8')
+>             };
+>         } catch (e) {
+>             console.error("Failed to load SSL cert:", e);
+>             _cr = {};
+>         }
+>         var sserver = https.createServer(_cr, app);
