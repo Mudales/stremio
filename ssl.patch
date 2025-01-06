@@ -1,9 +1,6 @@
 --- server.js
 +++ server-up.js
 @@ -43885,7 +43885,18 @@
-             appPath: appPath,
-             apiEndpoint: apiCertifficateEndpoint
-         });
 -        var sserver = https.createServer(app);
 +        try {
 +            var fs = require('fs');
