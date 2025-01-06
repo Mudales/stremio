@@ -34,7 +34,7 @@ rm jellyfin-ffmpeg_4.4.1-4-buster.deb
 
 # Copy server.js
 echo "Copying server.js"
-wget https://raw.githubusercontent.com/refa3211/stremio/main/server.js
+wget https://raw.githubusercontent.com/Mudales/stremio/main/server.js
 # cp /path/to/your/server.js .
 
 # Expose ports
