@@ -1,6 +1,9 @@
 --- server.js
 +++ server-up.js
 @@ -43885,7 +43885,18 @@
+             appPath: appPath,
+             apiEndpoint: apiCertifficateEndpoint
+         });
 -        var sserver = https.createServer(app);
 +        try {
 +            var fs = require('fs');
@@ -14,3 +17,6 @@
 +            _cr = {};
 +        }
 +        var sserver = https.createServer(_cr, app);
+         if (sserver.listen(12470), sserver.on("listening", (function() {
+             console.log("EngineFS HTTPS endpoint at https://local.strem.io:12470");
+         })), sserver.on("error", (function(err) {
