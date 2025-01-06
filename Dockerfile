@@ -40,11 +40,10 @@ VOLUME ["/root/.stremio-server"]
 
 # HTTP
 EXPOSE 11470
-EXPOSE 11471
 # HTTPS
 EXPOSE 12470
 EXPOSE 443
-EXPOSE 8080
+
 
 # Environment variables
 ENV FFMPEG_BIN=/usr/lib/jellyfin-ffmpeg/ffmpeg
