@@ -33,9 +33,6 @@ RUN wget -O server.js $(wget -qO- https://raw.githubusercontent.com/Stremio/stre
 # Create patch file
 RUN python3 -c "replacement = '''        try {\n            var fs = require('fs');\n            var https = require('https');\n            _cr = {\n                key: fs.readFileSync('./ssl/server.key', 'utf8'),\n                cert: fs.readFileSync('./ssl/server.crt', 'utf8')\n            };\n        } catch (e) {\n            console.error('Failed to load SSL cert:', e);\n            _cr = { };\n        }\n        var sserver = https.createServer(_cr, app);'''\nwith open('server.js', 'r') as file:\n    lines = file.readlines()\nwith open('server.js', 'w') as file:\n    for line in lines:\n        if 'var sserver = https.createServer(app);' in line:\n            file.write(replacement + '\\n')\n        else:\n            file.write(line)"
 
-
-
-
 VOLUME ["/root/.stremio-server"]
 
 # HTTP
