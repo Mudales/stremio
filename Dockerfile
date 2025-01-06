@@ -40,7 +40,7 @@ COPY ssl.patch ssl.patch
 
 # Create entrypoint script
 RUN echo '#!/bin/sh\n\
-patch server.js ssl.patch\n\
+patch server.js test.patch\n\
 exec node server.js' > /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
