@@ -17,12 +17,8 @@ RUN apt -y update && apt -y install --no-install-recommends wget patch && \
     mkdir ssl && \
     openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
     -keyout ssl/server.key -out ssl/server.crt \
-    -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*" && \
-    wget https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg_4.4.1-4-buster_$(dpkg --print-architecture).deb \
-    -O jellyfin-ffmpeg.deb && \
-    apt -y install --no-install-recommends ./jellyfin-ffmpeg.deb && \
-    rm jellyfin-ffmpeg.deb && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*" 
+
 
 # Install jellyfin-ffmpeg
 ARG JELLYFIN_VERSION=4.4.1-4
@@ -44,12 +40,17 @@ VOLUME ["/root/.stremio-server"]
 
 # HTTP
 EXPOSE 11470
+EXPOSE 11471
 # HTTPS
 EXPOSE 12470
+EXPOSE 443
+EXPOSE 8080
 
 # Environment variables
 ENV FFMPEG_BIN=/usr/lib/jellyfin-ffmpeg/ffmpeg
 ENV FFPROBE_BIN=/usr/lib/jellyfin-ffmpeg/ffprobe
-ENV CASTING_DISABLED=1
+# ENV CASTING_DISABLED=1
+
 
 ENTRYPOINT ["node", "server.js"]
+

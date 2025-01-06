@@ -22,3 +22,9 @@ with open("server.js", "w") as file:
             file.write(replacement + "\n")
         else:
             file.write(line)
+
+
+# import time
+# print("finished")
+# print("now sleeping for 600 seconds")   
+# time.sleep(600)
