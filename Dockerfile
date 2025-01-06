@@ -30,9 +30,7 @@ RUN wget https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg
     apt -y install ./jellyfin-ffmpeg_4.4.1-4-buster.deb && \
     rm jellyfin-ffmpeg_4.4.1-4-buster.deb
 
-COPY download_server.sh download_server.sh
-RUN chmod +x download_server.sh && \
-    ./download_server.sh
+RUN wget $(wget -O- https://raw.githubusercontent.com/Stremio/stremio-shell/master/server-url.txt) 
 
 # Create patch file
 RUN echo '--- server.js\n\
