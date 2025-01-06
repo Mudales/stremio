@@ -1,0 +1,16 @@
+--- server.js
++++ server.js
+@@ -43888 +43888,12 @@
+-           var sserver = https.createServer(app); 
++           try {
++               var fs = require('fs');
++               var https = require('https');
++               _cr = {
++                   key: fs.readFileSync('./ssl/server.key', 'utf8'),
++                   cert: fs.readFileSync('./ssl/server.crt', 'utf8')
++               };
++           } catch (e) {
++               console.error("Failed to load SSL cert:", e);
++               _cr = { };
++           }
++           var sserver = https.createServer(_cr, app);
