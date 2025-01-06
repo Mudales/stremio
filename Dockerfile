@@ -70,4 +70,4 @@ ENV APP_PATH=
 ENV NO_CORS=
 ENV CASTING_DISABLED=1
 
-ENTRYPOINT ["/stremio/entrypoint.sh"]
+ENTRYPOINT [ "node", "server.js" ]
