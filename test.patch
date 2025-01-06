@@ -1,5 +1,5 @@
---- a/server.js
-+++ b/server.js
+--- server.js   2024-03-27 10:09:53.000000000 +0000
++++ server.js        2025-01-06 14:56:07.447352071 +0000
 @@ -43885,7 +43885,18 @@
              appPath: appPath,
              apiEndpoint: apiCertifficateEndpoint
