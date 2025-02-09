@@ -1,10 +1,11 @@
 version: '3.8'
-
 services:
   stremio:
     build: .
     ports:
       - "11470:11470"
       - "443:12470"
+    volumes:
+      - ./stremio-server:/root/.stremio-server
     command: -d
     restart: always
