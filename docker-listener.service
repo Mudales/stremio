@@ -1,0 +1,15 @@
+[Unit]
+Description=Docker Web Listener Service
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/refa/stremio
+ExecStart=/usr/bin/python3 /home/refa/stremio/web_listener.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
