@@ -1,9 +1,0 @@
-[Unit]
-Description=Socket for Stremio Docker App
-
-[Socket]
-ListenStream=443
-Accept=yes
-
-[Install]
-WantedBy=sockets.target
