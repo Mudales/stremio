@@ -1,5 +1,7 @@
-FROM node:14-slim
+# Use a smaller base image
+FROM node:14-alpine
 
+# Set environment variables
 ARG VERSION=master
 ARG BUILD=desktop
 
@@ -8,53 +10,46 @@ LABEL com.stremio.vendor="Smart Code Ltd." \
       description="Stremio's streaming Server"
 
 WORKDIR /stremio
+# Download server.js
 
-# Install dependencies and generate SSL certificate
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    wget \
+
+# Install dependencies and FFmpeg
+RUN apk add --no-cache \
+    curl \
+    ffmpeg \
     openssl \
     python3 \
     procps \
-    curl \
     && mkdir ssl \
     && openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
        -keyout ssl/server.key -out ssl/server.crt \
-       -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*"
+       -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*" \
+       && curl -L -o server.js "https://dl.strem.io/server/v4.20.8/desktop/server.js"
 
-# Download and install jellyfin-ffmpeg
-RUN wget --no-check-certificate https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg_4.4.1-4-buster_$(dpkg --print-architecture).deb \
-    -O jellyfin-ffmpeg.deb && \
-    apt-get install -y ./jellyfin-ffmpeg.deb && \
-    rm jellyfin-ffmpeg.deb
+# RUN curl -L -o server.js "https://dl.strem.io/server/v4.20.8/desktop/server.js"
 
-# Download server.js
-RUN wget --no-check-certificate -O server.js "https://dl.strem.io/server/v4.20.8/desktop/server.js"
-
-# Create directory and set permissions
+# Create configuration directory with necessary permissions
 RUN mkdir -p /root/.stremio-server && \
-    touch /root/.stremio-server/server-settings.json && \
     echo '{}' > /root/.stremio-server/server-settings.json && \
     chmod 777 -R /root/.stremio-server
 
-# Cleanup but keep curl and procps
-RUN apt-get remove -y wget && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
+# Copy and execute fix.py, then remove it
 COPY fix.py fix.py
 RUN python3 fix.py && rm fix.py
 
+# Define persistent storage
 VOLUME ["/root/.stremio-server"]
 
+# Expose required ports
 EXPOSE 11470 12470 443
 
-ENV FFMPEG_BIN=/usr/lib/jellyfin-ffmpeg/ffmpeg \
-    FFPROBE_BIN=/usr/lib/jellyfin-ffmpeg/ffprobe
+# Define environment variables
+ENV FFMPEG_BIN=/usr/bin/ffmpeg \
+    FFPROBE_BIN=/usr/bin/ffprobe
 
-# Modified healthcheck with longer intervals and start period
+# Healthcheck to ensure the server is running
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:11470/ || exit 1
 
+# Start the application
 ENTRYPOINT ["node", "server.js"]
