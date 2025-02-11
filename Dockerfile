@@ -20,6 +20,36 @@ RUN apk add --no-cache \
     openssl \
     python3 \
     procps \
+    gnutls \
+  freetype-dev \
+  gnutls-dev \
+  lame-dev \
+  libass-dev \
+  libogg-dev \
+  libtheora-dev \
+  libvorbis-dev \ 
+  libvpx-dev \
+  libwebp-dev \ 
+  libssh2 \
+  opus-dev \
+  rtmpdump-dev \
+  x264-dev \
+  x265-dev \
+  yasm-dev \
+  build-base \ 
+  coreutils \ 
+  gnutls \ 
+  nasm \ 
+  dav1d-dev \
+  libbluray-dev \
+  libdrm-dev \
+  zimg-dev \
+  aom-dev \
+  xvidcore-dev \
+  fdk-aac-dev \
+  libva-dev \
+  git \
+  x264 \
     && mkdir ssl \
     && openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
        -keyout ssl/server.key -out ssl/server.crt \
