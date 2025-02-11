@@ -9,26 +9,28 @@ LABEL com.stremio.vendor="Smart Code Ltd." \
 
 WORKDIR /stremio
 
-# Install dependencies, generate SSL certificate, and clean up in a single layer
+# Install dependencies and generate SSL certificate
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+    wget \
     openssl \
     python3 \
     procps \
+    curl \
     && mkdir ssl \
     && openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
        -keyout ssl/server.key -out ssl/server.crt \
        -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*" \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Download and install jellyfin-ffmpeg in a single step
+# Download and install jellyfin-ffmpeg
 RUN ARCH=$(dpkg --print-architecture) && \
-    curl -L -o jellyfin-ffmpeg.deb "https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg_4.4.1-4-buster_${ARCH}.deb" && \
+    wget --no-check-certificate -O jellyfin-ffmpeg.deb \
+    "https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg_4.4.1-4-buster_${ARCH}.deb" && \
     apt-get install -y ./jellyfin-ffmpeg.deb && \
     rm -f jellyfin-ffmpeg.deb
 
 # Download server.js
-RUN curl -L -o server.js "https://dl.strem.io/server/v4.20.8/desktop/server.js"
+RUN wget --no-check-certificate -O server.js "https://dl.strem.io/server/v4.20.8/desktop/server.js"
 
 # Create configuration directory and set permissions
 RUN mkdir -p /root/.stremio-server && \
