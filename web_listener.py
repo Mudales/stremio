@@ -3,6 +3,8 @@ import docker
 import os
 import sys
 from pathlib import Path
+import subprocess
+
 import logging
 
 # Configure logging
@@ -25,19 +27,27 @@ def is_container_running():
         logger.error(f"Docker API error: {e}")
         return False
 
+
 def start_container():
     try:
         if not COMPOSE_FILE_PATH.exists():
             logger.error(f"Docker compose file not found at {COMPOSE_FILE_PATH}")
             return False
 
-        # Using docker-compose command through os.system as python-docker doesn't
-        # directly support compose v2
-        result = os.system(f"docker-compose -f {COMPOSE_FILE_PATH} up -d")
-        return result == 0
-    except Exception as e:
-        logger.error(f"Error starting container: {e}")
+        command = ["docker-compose", "-f", str(COMPOSE_FILE_PATH), "up", "-d", "--build"]
+        # Run the command, capturing output and errors
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        logger.info(f"docker-compose stdout: {result.stdout}")
+        if result.stderr:
+            logger.warning(f"docker-compose stderr: {result.stderr}")
+        return True
+    except FileNotFoundError:
+        logger.error("'docker-compose' command not found. Is it installed?")
         return False
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error starting container with docker-compose: {e.stderr}")
+        return False
+
 
 @app.route('/', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE'])
 @app.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
