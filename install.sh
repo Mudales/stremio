@@ -4,11 +4,10 @@
 # Stremio Smart Server - Installation Script
 # ==============================================================================
 # This script automates the full setup for the Stremio project.
-# It creates all necessary files, services, and directories.
+# It uses the original, user-provided Dockerfile to ensure functionality.
 # ==============================================================================
 
 # --- Configuration ---
-# The main directory where all project files will be stored.
 INSTALL_DIR="/home/refa/stremio"
 
 
@@ -72,49 +71,70 @@ fi
 # 4. Create Project Files
 print_header "Writing project files"
 
-# Dockerfile (using the final corrected version)
+# Dockerfile (Reverted to the user's original version)
 cat << 'EOF' > "${INSTALL_DIR}/Dockerfile"
-# --- Stage 1: The Builder ---
-FROM node:14-slim AS builder
-WORKDIR /build
-# Install tools needed only for the build process
-RUN apt-get update && apt-get install -y --no-install-recommends wget python3 openssl
-# Download Stremio server
-RUN wget --no-check-certificate -O server.js "https://dl.strem.io/server/v4.20.8/desktop/server.js"
-# Create SSL certificates
-RUN mkdir ssl && openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
-   -keyout ssl/server.key -out ssl/server.crt \
-   -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*"
-# Copy and run the fix script
-COPY fix.py .
-RUN python3 fix.py
-
-# --- Stage 2: The Final Image ---
 FROM node:14-slim
+
+ARG VERSION=master
+ARG BUILD=desktop
+
+LABEL com.stremio.vendor="Smart Code Ltd." \
+      version=${VERSION} \
+      description="Stremio's streaming Server"
+
 WORKDIR /stremio
-# Install runtime dependencies
+
+# Install dependencies and generate SSL certificate
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl procps wget && \
-    wget --no-check-certificate https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg_4.4.1-4-buster_$(dpkg --print-architecture).deb -O jellyfin-ffmpeg.deb && \
+    apt-get install -y --no-install-recommends \
+    wget \
+    openssl \
+    python3 \
+    procps \
+    curl \
+    && mkdir ssl \
+    && openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
+       -keyout ssl/server.key -out ssl/server.crt \
+       -subj "/C=US/ST=State/L=City/O=Organization/OU=OrgUnit/CN=*"
+
+# Download and install jellyfin-ffmpeg
+RUN wget --no-check-certificate https://repo.jellyfin.org/archive/ffmpeg/debian/4.4.1-4/jellyfin-ffmpeg_4.4.1-4-buster_$(dpkg --print-architecture).deb \
+    -O jellyfin-ffmpeg.deb && \
     apt-get install -y ./jellyfin-ffmpeg.deb && \
-    rm jellyfin-ffmpeg.deb && \
-    apt-get remove -y wget && \
+    rm jellyfin-ffmpeg.deb
+
+# Download server.js
+RUN wget --no-check-certificate -O server.js "https://dl.strem.io/server/v4.20.8/desktop/server.js"
+
+# Create directory and set permissions
+RUN mkdir -p /root/.stremio-server && \
+    touch /root/.stremio-server/server-settings.json && \
+    echo '{}' > /root/.stremio-server/server-settings.json && \
+    chmod 777 -R /root/.stremio-server
+
+# Cleanup but keep curl and procps
+RUN apt-get remove -y wget && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
-# Copy artifacts from the builder stage
-COPY --from=builder /build/server.js .
-COPY --from=builder /build/ssl ./ssl
-# Set up environment
-RUN mkdir -p /root/.stremio-server
-EXPOSE 11470 12470
+
+COPY fix.py fix.py
+RUN python3 fix.py && rm fix.py
+
+VOLUME ["/root/.stremio-server"]
+
+EXPOSE 11470 12470 443
+
 ENV FFMPEG_BIN=/usr/lib/jellyfin-ffmpeg/ffmpeg \
     FFPROBE_BIN=/usr/lib/jellyfin-ffmpeg/ffprobe
+
+# Modified healthcheck with longer intervals and start period
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:11470/ || exit 1
+
 ENTRYPOINT ["node", "server.js"]
 EOF
-print_success "Dockerfile created."
+print_success "Dockerfile created (using original version)."
 
 # docker-compose.yml
 cat << 'EOF' > "${INSTALL_DIR}/docker-compose.yml"
@@ -170,6 +190,7 @@ import sys
 from pathlib import Path
 import logging
 import subprocess
+import time
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -195,12 +216,13 @@ def start_container():
             logger.error(f"Docker compose file not found at {COMPOSE_FILE_PATH}")
             return False
         command = ["docker-compose", "-f", str(COMPOSE_FILE_PATH), "up", "-d", "--build"]
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"Error starting container with docker-compose: {result.stderr}")
+            return False
         logger.info(f"docker-compose up stdout: {result.stdout}")
+        time.sleep(5) # Give container time to start
         return True
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error starting container with docker-compose: {e.stderr}")
-        return False
     except Exception as e:
         logger.error(f"An unexpected error occurred during container start: {e}")
         return False
