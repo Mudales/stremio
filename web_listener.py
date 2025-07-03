@@ -19,12 +19,16 @@ SERVICE_NAME = "stremio"
 
 def is_container_running():
     try:
-        containers = client.containers.list(
-            filters={"name": f".*{SERVICE_NAME}.*"}
-        )
-        return len(containers) > 0
-    except docker.errors.APIError as e:
-        logger.error(f"Docker API error: {e}")
+        # List all containers (including stopped ones)
+        all_containers = client.containers.list(all=True)
+        # Find a container whose name CONTAINS the service name
+        for container in all_containers:
+            if CONTAINER_NAME in container.name and container.status == 'running':
+                logger.info(f"Found running container: {container.name}")
+                return True
+        return False
+    except Exception as e:
+        logger.error(f"Error checking container status: {e}")
         return False
 
 
