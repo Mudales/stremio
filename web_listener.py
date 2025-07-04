@@ -3,33 +3,33 @@ import docker
 import os
 import sys
 from pathlib import Path
-import subprocess
-
 import logging
+import subprocess
+import time
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Add this constant at the top of the file with your other constants
+IMAGE_NAME = "stremio_stremio" # <-- !!! עדכן לשם האימג' המדויק שלך
+
+
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
 app = Flask(__name__)
 client = docker.from_env()
 
-COMPOSE_FILE_PATH = Path("docker-compose.yml")
-SERVICE_NAME = "stremio"
+COMPOSE_FILE_PATH = Path(__file__).parent / "docker-compose.yml"
+CONTAINER_NAME = "stremio_server"
 
 def is_container_running():
     try:
-        # List all containers (including stopped ones)
-        all_containers = client.containers.list(all=True)
-        # Find a container whose name CONTAINS the service name
-        for container in all_containers:
-            if CONTAINER_NAME in container.name and container.status == 'running':
-                logger.info(f"Found running container: {container.name}")
-                return True
+        container = client.containers.get(CONTAINER_NAME)
+        return container.status == 'running'
+    except docker.errors.NotFound:
         return False
     except Exception as e:
         logger.error(f"Error checking container status: {e}")
         return False
+
 
 
 def start_container():
@@ -38,39 +38,43 @@ def start_container():
             logger.error(f"Docker compose file not found at {COMPOSE_FILE_PATH}")
             return False
 
-        command = ["docker-compose", "-f", str(COMPOSE_FILE_PATH), "up", "-d", "--build"]
-        # Run the command, capturing output and errors
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        logger.info(f"docker-compose stdout: {result.stdout}")
-        if result.stderr:
-            logger.warning(f"docker-compose stderr: {result.stderr}")
+        # Check if the image needs to be built
+        try:
+            client.images.get(IMAGE_NAME)
+            logger.info(f"Image '{IMAGE_NAME}' already exists. Skipping build.")
+            # Command without build
+            command = ["docker-compose", "-f", str(COMPOSE_FILE_PATH), "up", "-d"]
+        except docker.errors.ImageNotFound:
+            logger.info(f"Image '{IMAGE_NAME}' not found. Building...")
+            # Command with build
+            command = ["docker-compose", "-f", str(COMPOSE_FILE_PATH), "up", "-d", "--build"]
+
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"Error starting container with docker-compose: {result.stderr}")
+            return False
+        
+        logger.info(f"docker-compose up stdout: {result.stdout}")
+        time.sleep(5) # Give container time to start
         return True
-    except FileNotFoundError:
-        logger.error("'docker-compose' command not found. Is it installed?")
-        return False
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error starting container with docker-compose: {e.stderr}")
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during container start: {e}")
         return False
 
-
-@app.route('/', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE'])
-@app.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
 def catch_all(path):
     if not is_container_running():
         logger.info("Container not running. Starting...")
         if not start_container():
-            return "Failed to start container", 500
-        logger.info("Container started successfully")
-
-    # Redirect to HTTPS (443)
+            return "Failed to start Stremio container.", 500
+        logger.info("Container started successfully.")
     scheme = 'https'
     host = request.headers.get('Host', '').split(':')[0]
     return redirect(f"{scheme}://{host}/{path}", code=307)
 
 if __name__ == "__main__":
-    # Check if running as root (required for port 80)
     if os.geteuid() != 0:
-        logger.error("This script must be run as root to bind to port 80")
+        logger.error("This script must be run as root to bind to port 80.")
         sys.exit(1)
-
-    app.run(host='0.0.0.0', port=80)
+    app.run(host='0.0.0.0', port=80, debug=False)
