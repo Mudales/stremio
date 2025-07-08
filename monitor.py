@@ -1,5 +1,5 @@
 import docker
-import time
+import time, subprocess 
 import re
 import logging
 from datetime import datetime, timedelta
@@ -48,6 +48,14 @@ class ContainerMonitor:
                 if elapsed_inactive_time >= self.inactivity_threshold:
                     logger.info(f"No activity for {elapsed_inactive_time}, stopping container...")
                     container.stop()
+                    # clear the cache
+                    try:
+                        logger.info("Clearing Stremio cache...")
+                        cleanup_command = "rm -rf /home/refa/stremio/stremio-server/stremio-cache/*"
+                        subprocess.run(cleanup_command, shell=True, check=True)
+                        logger.info("Cache cleared successfully.")
+                    except subprocess.CalledProcessError as e:
+                        logger.error(f"Failed to clear cache: {e}")
                     break
             else:
                 self.inactive_start_time = None  # Reset if activity is detected
