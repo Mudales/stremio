@@ -20,7 +20,7 @@ client = docker.from_env()
 COMPOSE_FILE_PATH = Path(__file__).parent / "docker-compose.yml"
 CONTAINER_NAME = "stremio_server"
 
-def is_stremio_container_running(keyword="stremio"):
+def is_container_running(keyword="stremio"):
     """
     Checks if a container with a name containing the specified keyword is running.
 
