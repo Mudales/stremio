@@ -80,7 +80,7 @@ if __name__ == "__main__":
         monitor = ContainerMonitor(
             container_name=target_container.name,
             inactivity_threshold_minutes=30,  # Adjust as needed
-            check_interval_seconds=30  # Check logs every 10 seconds
+            check_interval_seconds=30  # Check logs every 30 seconds
         )
         monitor.monitor()
     else:
