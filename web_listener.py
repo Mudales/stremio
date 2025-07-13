@@ -20,17 +20,33 @@ client = docker.from_env()
 COMPOSE_FILE_PATH = Path(__file__).parent / "docker-compose.yml"
 CONTAINER_NAME = "stremio_server"
 
-def is_container_running():
+def is_stremio_container_running(keyword="stremio"):
+    """
+    Checks if a container with a name containing the specified keyword is running.
+
+    Args:
+        keyword (str): The keyword to search for in the container names.
+
+    Returns:
+        bool: True if a matching container is running, False otherwise.
+    """
     try:
-        container = client.containers.get(CONTAINER_NAME)
-        return container.status == 'running'
-    except docker.errors.NotFound:
+        # List only running containers for better performance
+        running_containers = client.containers.list(filters={"status": "running"})
+        for container in running_containers:
+            if keyword in container.name:
+                logger.info(f"Found running Stremio container: {container.name} (ID: {container.id})")
+                return True
+        # If the loop completes, no matching container was found
+        logger.info("No running container with 'stremio' in the name was found.")
+        return False
+    except docker.errors.DockerException as e:
+        logger.error(f"An error occurred while communicating with the Docker daemon: {e}")
         return False
     except Exception as e:
-        logger.error(f"Error checking container status: {e}")
+        logger.error(f"An unexpected error occurred: {e}")
         return False
-
-
+        
 
 def start_container():
     try:
