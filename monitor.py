@@ -56,7 +56,7 @@ class ContainerMonitor:
                         logger.info("Cache cleared successfully.")
                     except subprocess.CalledProcessError as e:
                         logger.error(f"Failed to clear cache: {e}")
-                    break
+                    # break
             else:
                 self.inactive_start_time = None  # Reset if activity is detected
 
