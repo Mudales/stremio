@@ -58,7 +58,7 @@ ENV FFMPEG_BIN=/usr/lib/jellyfin-ffmpeg/ffmpeg \
     FFPROBE_BIN=/usr/lib/jellyfin-ffmpeg/ffprobe
 
 # Modified healthcheck with longer intervals and start period
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:11470/ || exit 1
+#HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+#    CMD curl -f http://localhost:11470/ || exit 1
 
 ENTRYPOINT ["node", "server.js"]
