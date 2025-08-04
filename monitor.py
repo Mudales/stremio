@@ -19,8 +19,10 @@ class ContainerMonitor:
         self.inactivity_threshold = timedelta(minutes=inactivity_threshold_minutes)
         self.check_interval = check_interval_seconds
         self.inactive_start_time = None
+        self.no_log_start_time = None  # <-- ADD THIS LINE
         self.no_activity_pattern = re.compile(r"-> GET /\s*\n")
         self.waiting_for_restart = False
+
 
     def _clear_cache(self):
         try:
@@ -48,50 +50,51 @@ class ContainerMonitor:
                         self.inactive_start_time = None
 
                     logs = container.logs(tail=10)
-                   logs = container.logs(tail=10)
+                    ########
 
-                if logs:
-                    logs = logs.decode("utf-8")
-                    logger.debug(f"Container logs:\n{logs}")
-                
-                    # Reset no-log timer
-                    if self.no_log_start_time is not None:
-                        logger.info("Logs received. Resetting no-log timer.")
-                        self.no_log_start_time = None
-                
-                    # Check for activity pattern
-                    if self.no_activity_pattern.search(logs):
-                        if self.inactive_start_time is None:
-                            self.inactive_start_time = datetime.now()
-                            logger.info("Inactivity pattern detected. Starting timer.")
+                    if logs:
+                        logs = logs.decode("utf-8")
+                        logger.debug(f"Container logs:\n{logs}")
+
+                        # Reset no-log timer
+                        if self.no_log_start_time is not None:
+                            logger.info("Logs received. Resetting no-log timer.")
+                            self.no_log_start_time = None
+
+                        # Check for activity pattern
+                        if self.no_activity_pattern.search(logs):
+                            if self.inactive_start_time is None:
+                                self.inactive_start_time = datetime.now()
+                                logger.info("Inactivity pattern detected. Starting timer.")
+                            else:
+                                elapsed = datetime.now() - self.inactive_start_time
+                                logger.info(f"Inactivity duration: {elapsed}")
+                                if elapsed >= self.inactivity_threshold:
+                                    logger.info("Inactivity threshold reached. Stopping container.")
+                                    container.stop()
+                                    self._clear_cache()
+                                    self.waiting_for_restart = True
                         else:
-                            elapsed = datetime.now() - self.inactive_start_time
-                            logger.info(f"Inactivity duration: {elapsed}")
-                            if elapsed >= self.inactivity_threshold:
-                                logger.info("Inactivity threshold reached. Stopping container.")
+                            if self.inactive_start_time is not None:
+                                logger.info("Activity detected. Resetting inactivity timer.")
+                                self.inactive_start_time = None
+
+                    else:
+                        # No logs at all received
+                        if self.no_log_start_time is None:
+                            self.no_log_start_time = datetime.now()
+                            logger.info("No logs received. Starting no-log timer.")
+                        else:
+                            silent_duration = datetime.now() - self.no_log_start_time
+                            logger.info(f"No logs for {silent_duration}.")
+
+                            if silent_duration >= self.inactivity_threshold:
+                                logger.info("No-log threshold reached. Stopping container.")
                                 container.stop()
                                 self._clear_cache()
                                 self.waiting_for_restart = True
-                    else:
-                        if self.inactive_start_time is not None:
-                            logger.info("Activity detected. Resetting inactivity timer.")
-                            self.inactive_start_time = None
-                
-                else:
-                    # No logs at all received
-                    if self.no_log_start_time is None:
-                        self.no_log_start_time = datetime.now()
-                        logger.info("No logs received. Starting no-log timer.")
-                    else:
-                        silent_duration = datetime.now() - self.no_log_start_time
-                        logger.info(f"No logs for {silent_duration}.")
-                
-                        if silent_duration >= self.inactivity_threshold:
-                            logger.info("No-log threshold reached. Stopping container.")
-                            container.stop()
-                            self._clear_cache()
-                            self.waiting_for_restart = True
 
+                    ###
                 else:
                     logger.debug(f"Container '{self.container_name}' is not running.")
                     if not self.waiting_for_restart:
