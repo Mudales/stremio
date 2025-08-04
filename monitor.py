@@ -1,87 +1,103 @@
 import docker
-import time, subprocess 
+import time
+import subprocess
 import re
 import logging
 from datetime import datetime, timedelta
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# --- Basic Setup ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 class ContainerMonitor:
-    def __init__(self, container_name, inactivity_threshold_minutes=30, check_interval_seconds=10):
+    """
+    Monitors a Docker container for inactivity and stops it, clearing a cache.
+    """
+    def __init__(self, container_name, inactivity_threshold_minutes=30, check_interval_seconds=30):
         self.client = docker.from_env()
         self.container_name = container_name
         self.inactivity_threshold = timedelta(minutes=inactivity_threshold_minutes)
         self.check_interval = check_interval_seconds
+        
+        # This will store the time when inactivity was first detected.
         self.inactive_start_time = None
-        self.no_activity_pattern = re.compile(r"(?:\n|^)-> GET /\s*")
+        
+        # Regex to find lines indicating a server is idle (e.g., just responding to health checks)
+        self.no_activity_pattern = re.compile(r"-> GET /\s*\n")
 
-    def get_container(self):
+    def _clear_cache(self):
+        """Executes the command to clear the Stremio cache."""
         try:
-            return self.client.containers.get(self.container_name)
-        except docker.errors.NotFound:
-            logger.error(f"Container {self.container_name} not found")
-            return None
-
-    def check_logs_for_inactivity(self, container):
-        logs = container.logs(tail=20, stderr=False, stdout=True).decode("utf-8")
-        if self.no_activity_pattern.findall(logs):
-            logger.info("Detected repeated inactivity pattern in logs.")
-            return True
-        return False
+            logging.info("Clearing Stremio cache...")
+            cleanup_command = "rm -rf /home/refa/stremio/stremio-server/stremio-cache/*"
+            subprocess.run(cleanup_command, shell=True, check=True, capture_output=True)
+            logging.info("Cache cleared successfully.")
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Failed to clear cache: {e.stderr.decode()}")
 
     def monitor(self):
-        logger.info(f"Monitoring container {self.container_name}...")
-        
+        """Main monitoring loop."""
+        logging.info(f"Starting monitor for container '{self.container_name}'...")
         while True:
-            container = self.get_container()
-            if not container:
-                break  # Exit if the container is not found
-            
-            if self.check_logs_for_inactivity(container):
-                if self.inactive_start_time is None:
-                    self.inactive_start_time = datetime.now()
-                
-                elapsed_inactive_time = datetime.now() - self.inactive_start_time
-                logger.info(f"Inactivity detected for {elapsed_inactive_time}")
+            try:
+                container = self.client.containers.get(self.container_name)
 
-                if elapsed_inactive_time >= self.inactivity_threshold:
-                    logger.info(f"No activity for {elapsed_inactive_time}, stopping container...")
-                    container.stop()
-                    # clear the cache
-                    try:
-                        logger.info("Clearing Stremio cache...")
-                        cleanup_command = "rm -rf /home/refa/stremio/stremio-server/stremio-cache/*"
-                        subprocess.run(cleanup_command, shell=True, check=True)
-                        logger.info("Cache cleared successfully.")
-                    except subprocess.CalledProcessError as e:
-                        logger.error(f"Failed to clear cache: {e}")
-                    # break
-            else:
-                self.inactive_start_time = None  # Reset if activity is detected
+                # 1. Only perform checks if the container is actually running
+                if container.status == 'running':
+                    logs = container.logs(tail=10).decode("utf-8")
+                    
+                    # 2. Check if the logs show inactivity
+                    if self.no_activity_pattern.search(logs):
+                        if self.inactive_start_time is None:
+                            # Start the inactivity timer
+                            self.inactive_start_time = datetime.now()
+                            logging.info("Inactivity pattern detected. Starting timer.")
+                        
+                        elapsed_time = datetime.now() - self.inactive_start_time
+                        logging.info(f"Container has been inactive for {elapsed_time}.")
+
+                        # 3. If inactivity threshold is reached, stop the container
+                        if elapsed_time >= self.inactivity_threshold:
+                            logging.info("Inactivity threshold reached. Stopping container.")
+                            container.stop()
+                            self._clear_cache()
+                            
+                            # 4. CRITICAL FIX: Reset the timer after stopping the container
+                            self.inactive_start_time = None
+                            logging.info("Timer reset. Waiting for container to restart.")
+
+                    else:
+                        # Activity was detected, so reset the timer if it was running
+                        if self.inactive_start_time is not None:
+                            logging.info("Activity detected. Resetting inactivity timer.")
+                            self.inactive_start_time = None
+                
+                else:
+                    # If container is stopped, ensure timer is reset and wait
+                    if self.inactive_start_time is not None:
+                        self.inactive_start_time = None
+                    logging.info(f"Container '{self.container_name}' is not running. Waiting...")
+
+            except docker.errors.NotFound:
+                logging.warning(f"Container '{self.container_name}' not found. Waiting...")
+                # Ensure timer is reset if container is removed
+                self.inactive_start_time = None
+            except Exception as e:
+                logging.error(f"An unexpected error occurred: {e}")
 
             time.sleep(self.check_interval)
 
-
 if __name__ == "__main__":
-    container_name = 'stremio'
-
-    client = docker.from_env()
-    containers = client.containers.list()
-
-    target_container = None
-    for container in containers:
-        if container_name in container.name:
-            target_container = container
-            logger.info(f"Found container: {container.name}")
-            break
-
-    if target_container:
-        monitor = ContainerMonitor(
-            container_name=target_container.name,
-            inactivity_threshold_minutes=30,  # Adjust as needed
-            check_interval_seconds=30  # Check logs every 30 seconds
-        )
-        monitor.monitor()
-    else:
-        logger.error(f'Cannot find container with name "{container_name}"')
+    # --- Configuration ---
+    CONTAINER_TO_MONITOR = 'stremio'
+    INACTIVITY_MINUTES = 30
+    CHECK_INTERVAL_SECONDS = 30
+    
+    monitor = ContainerMonitor(
+        container_name=CONTAINER_TO_MONITOR,
+        inactivity_threshold_minutes=INACTIVITY_MINUTES,
+        check_interval_seconds=CHECK_INTERVAL_SECONDS
+    )
+    monitor.monitor()
