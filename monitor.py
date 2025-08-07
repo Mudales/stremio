@@ -1,7 +1,6 @@
 import docker
 import time
 import subprocess
-import re
 import logging
 from datetime import datetime, timedelta
 
@@ -19,10 +18,9 @@ class ContainerMonitor:
         self.inactivity_threshold = timedelta(minutes=inactivity_threshold_minutes)
         self.check_interval = check_interval_seconds
         self.inactive_start_time = None
-        self.no_log_start_time = None  # <-- ADD THIS LINE
-        self.no_activity_pattern = re.compile(r"-> GET /\s*\n")
         self.waiting_for_restart = False
-
+        # ### שינוי: הוספת משתנה למעקב אחר זמן הבדיקה האחרון ###
+        self.last_log_timestamp = datetime.now()
 
     def _clear_cache(self):
         try:
@@ -37,6 +35,8 @@ class ContainerMonitor:
 
     def monitor(self):
         logger.info(f"Starting monitor for container '{self.container_name}'...")
+        # הגדרת זמן התחלה ראשוני
+        self.last_log_timestamp = datetime.now()
 
         while True:
             try:
@@ -48,53 +48,36 @@ class ContainerMonitor:
                         logger.info("Container restarted. Resuming monitoring.")
                         self.waiting_for_restart = False
                         self.inactive_start_time = None
+                        self.last_log_timestamp = datetime.now() # איפוס הזמן לאחר ריסטארט
 
-                    logs = container.logs(tail=10)
-                    ########
+                    # ### שינוי מרכזי: בדיקת לוגים חדשים במקום בדיקת תוכן ###
+                    since_time = self.last_log_timestamp
+                    # עדכון חותמת הזמן *לפני* קריאת הלוגים כדי לא לפספס כלום
+                    self.last_log_timestamp = datetime.now()
+                    
+                    new_logs = container.logs(since=since_time)
 
-                    if logs:
-                        logs = logs.decode("utf-8")
-                        logger.debug(f"Container logs:\n{logs}")
-
-                        # Reset no-log timer
-                        if self.no_log_start_time is not None:
-                            logger.info("Logs received. Resetting no-log timer.")
-                            self.no_log_start_time = None
-
-                        # Check for activity pattern
-                        if self.no_activity_pattern.search(logs):
-                            if self.inactive_start_time is None:
-                                self.inactive_start_time = datetime.now()
-                                logger.info("Inactivity pattern detected. Starting timer.")
-                            else:
-                                elapsed = datetime.now() - self.inactive_start_time
-                                logger.info(f"Inactivity duration: {elapsed}")
-                                if elapsed >= self.inactivity_threshold:
-                                    logger.info("Inactivity threshold reached. Stopping container.")
-                                    container.stop()
-                                    self._clear_cache()
-                                    self.waiting_for_restart = True
+                    if not new_logs:
+                        # אין לוגים חדשים = חוסר פעילות
+                        if self.inactive_start_time is None:
+                            self.inactive_start_time = datetime.now()
+                            logger.info("No new logs detected. Starting inactivity timer.")
                         else:
-                            if self.inactive_start_time is not None:
-                                logger.info("Activity detected. Resetting inactivity timer.")
-                                self.inactive_start_time = None
-
-                    else:
-                        # No logs at all received
-                        if self.no_log_start_time is None:
-                            self.no_log_start_time = datetime.now()
-                            logger.info("No logs received. Starting no-log timer.")
-                        else:
-                            silent_duration = datetime.now() - self.no_log_start_time
-                            logger.info(f"No logs for {silent_duration}.")
-
-                            if silent_duration >= self.inactivity_threshold:
-                                logger.info("No-log threshold reached. Stopping container.")
+                            elapsed = datetime.now() - self.inactive_start_time
+                            logger.info(f"Container inactive for {elapsed}.")
+                            if elapsed >= self.inactivity_threshold:
+                                logger.warning("Inactivity threshold reached. Stopping container.")
                                 container.stop()
                                 self._clear_cache()
                                 self.waiting_for_restart = True
+                    else:
+                        # יש לוגים חדשים = פעילות
+                        if self.inactive_start_time is not None:
+                            logger.info("New activity detected. Resetting inactivity timer.")
+                            self.inactive_start_time = None
+                        # אפשר להוסיף הדפסה של הלוגים החדשים לדיבאג
+                        # logger.debug(f"New logs: {new_logs.decode('utf-8', errors='ignore').strip()}")
 
-                    ###
                 else:
                     logger.debug(f"Container '{self.container_name}' is not running.")
                     if not self.waiting_for_restart:
@@ -107,6 +90,7 @@ class ContainerMonitor:
                 logger.error(f"Unexpected error: {e}")
 
             time.sleep(self.check_interval)
+
 
 if __name__ == "__main__":
     container_name_to_find = 'stremio'
