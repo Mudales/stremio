@@ -4,8 +4,8 @@ set -e
 # ==============================================================================
 # Stremio Smart Server - Installation Script
 # ==============================================================================
-# Installs systemd services and builds the Docker image.
-# Project files (Dockerfile, monitor.py, etc.) are used directly from the repo.
+# Installs the systemd service and builds the Docker image.
+# Project files (Dockerfile, stremio_manager.py, etc.) are used from the repo.
 # ==============================================================================
 
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -24,7 +24,6 @@ print_success "Running as root"
 command -v docker  >/dev/null 2>&1 || print_error "Docker not installed"
 command -v python3 >/dev/null 2>&1 || print_error "Python 3 not installed"
 
-# Detect docker compose (plugin) vs docker-compose (standalone)
 if docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then
@@ -43,15 +42,24 @@ print_success "Python libraries ready"
 # --- 3. Ensure directories ---
 mkdir -p "${INSTALL_DIR}/stremio-server/stremio-cache"
 
-# --- 4. Install systemd services ---
-print_header "Installing systemd services"
+# --- 4. Install systemd service ---
+print_header "Installing systemd service"
 
-# Stop old services if running
-systemctl stop docker-listener.service container-monitor.service 2>/dev/null || true
+# Clean up old services from previous versions
+for OLD_SVC in docker-listener container-monitor; do
+    if systemctl list-unit-files "${OLD_SVC}.service" >/dev/null 2>&1; then
+        systemctl stop "${OLD_SVC}.service" 2>/dev/null || true
+        systemctl disable "${OLD_SVC}.service" 2>/dev/null || true
+        rm -f "/etc/systemd/system/${OLD_SVC}.service"
+    fi
+done
 
-cat << EOF > /etc/systemd/system/docker-listener.service
+# Stop current service if running
+systemctl stop stremio-manager.service 2>/dev/null || true
+
+cat << EOF > /etc/systemd/system/stremio-manager.service
 [Unit]
-Description=Stremio Web Listener (on-demand startup)
+Description=Stremio Manager (on-demand startup + auto-shutdown)
 After=network.target docker.service
 Requires=docker.service
 
@@ -59,36 +67,24 @@ Requires=docker.service
 Type=simple
 User=root
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/python3 ${INSTALL_DIR}/web_listener.py
+ExecStart=/usr/bin/python3 ${INSTALL_DIR}/stremio_manager.py
 Restart=on-failure
 RestartSec=5
 
-[Install]
-WantedBy=multi-user.target
-EOF
-
-cat << EOF > /etc/systemd/system/container-monitor.service
-[Unit]
-Description=Stremio Container Monitor (auto-shutdown)
-After=docker.service
-Requires=docker.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/python3 ${INSTALL_DIR}/monitor.py
-Restart=on-failure
-RestartSec=5
+# Uncomment to override defaults:
+# Environment=STREMIO_LISTEN_PORT=80
+# Environment=STREMIO_INACTIVITY_MINUTES=45
+# Environment=STREMIO_CHECK_INTERVAL=30
+# Environment=STREMIO_STARTUP_TIMEOUT=60
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable docker-listener.service container-monitor.service
-systemctl restart docker-listener.service container-monitor.service
-print_success "Services installed and started"
+systemctl enable stremio-manager.service
+systemctl restart stremio-manager.service
+print_success "stremio-manager.service installed and started"
 
 # --- 5. Build Docker image ---
 print_header "Building Docker image"
@@ -98,7 +94,7 @@ print_success "Image built"
 
 # --- Done ---
 print_header "Done!"
-echo "Services:  docker-listener, container-monitor"
-echo "Status:    sudo systemctl status docker-listener container-monitor"
-echo "Logs:      sudo journalctl -u docker-listener -u container-monitor -f"
+echo "Service:   stremio-manager"
+echo "Status:    sudo systemctl status stremio-manager"
+echo "Logs:      sudo journalctl -u stremio-manager -f"
 echo "Access:    http://<your-ip> (auto-starts container, redirects to HTTPS)"

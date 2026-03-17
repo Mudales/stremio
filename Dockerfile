@@ -1,9 +1,11 @@
 # --- Build stage: patch server.js with SSL support ---
-FROM node:18-alpine AS builder
+FROM node:18-slim AS builder
 
 WORKDIR /build
 
-RUN apk add --no-cache wget python3 openssl
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget python3 openssl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # Generate self-signed SSL certificate
 RUN mkdir ssl && openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
@@ -19,7 +21,7 @@ COPY fix.py fix.py
 RUN python3 fix.py
 
 # --- Runtime stage: minimal image ---
-FROM node:18-alpine
+FROM node:18-slim
 
 ARG VERSION=master
 LABEL com.stremio.vendor="Smart Code Ltd." \
@@ -28,8 +30,10 @@ LABEL com.stremio.vendor="Smart Code Ltd." \
 
 WORKDIR /stremio
 
-# Install only runtime dependencies
-RUN apk add --no-cache ffmpeg curl
+# Install runtime dependencies — ffmpeg from Debian (full codec support)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg curl procps && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy built artifacts from builder
 COPY --from=builder /build/server.js ./server.js
