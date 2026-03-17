@@ -1,87 +1,150 @@
 import docker
-import time, subprocess 
-import re
+import time
+import shutil
+import signal
+import os
 import logging
-from datetime import datetime, timedelta
+from pathlib import Path
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# --- Configuration via environment variables ---
+CONTAINER_KEYWORD = os.environ.get("MONITOR_CONTAINER_KEYWORD", "stremio")
+INACTIVITY_MINUTES = int(os.environ.get("MONITOR_INACTIVITY_MINUTES", "45"))
+CHECK_INTERVAL_SECONDS = int(os.environ.get("MONITOR_CHECK_INTERVAL", "30"))
+CACHE_DIR = os.environ.get("MONITOR_CACHE_DIR", "/home/refa/stremio/stremio-server/stremio-cache")
+# Minimum network bytes received between checks to count as "active"
+NETWORK_THRESHOLD_BYTES = int(os.environ.get("MONITOR_NETWORK_THRESHOLD", "1024"))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("container-monitor")
+
 
 class ContainerMonitor:
-    def __init__(self, container_name, inactivity_threshold_minutes=30, check_interval_seconds=10):
+    def __init__(self):
         self.client = docker.from_env()
-        self.container_name = container_name
-        self.inactivity_threshold = timedelta(minutes=inactivity_threshold_minutes)
-        self.check_interval = check_interval_seconds
-        self.inactive_start_time = None
-        self.no_activity_pattern = re.compile(r"(?:\n|^)-> GET /\s*")
+        self.inactivity_seconds = INACTIVITY_MINUTES * 60
+        self.inactive_since = None
+        self.prev_net_rx = None
+        self.running = True
 
-    def get_container(self):
+        # Graceful shutdown
+        signal.signal(signal.SIGTERM, self._shutdown)
+        signal.signal(signal.SIGINT, self._shutdown)
+
+    def _shutdown(self, _signum, _frame):
+        logger.info("Received shutdown signal, exiting gracefully.")
+        self.running = False
+
+    # ---- Helpers ----
+
+    def _find_container(self):
+        """Find container by keyword. Returns container or None."""
+        for c in self.client.containers.list(all=True):
+            if CONTAINER_KEYWORD in c.name:
+                return c
+        return None
+
+    def _get_network_rx_bytes(self, container):
+        """Get total bytes received by the container via Docker stats API."""
         try:
-            return self.client.containers.get(self.container_name)
-        except docker.errors.NotFound:
-            logger.error(f"Container {self.container_name} not found")
+            stats = container.stats(stream=False)
+            networks = stats.get("networks", {})
+            return sum(net.get("rx_bytes", 0) for net in networks.values())
+        except Exception:
             return None
 
-    def check_logs_for_inactivity(self, container):
-        logs = container.logs(tail=20, stderr=False, stdout=True).decode("utf-8")
-        if self.no_activity_pattern.findall(logs):
-            logger.info("Detected repeated inactivity pattern in logs.")
-            return True
-        return False
+    def _clear_cache(self):
+        """Remove stremio cache directory contents."""
+        cache_path = Path(CACHE_DIR)
+        if not cache_path.exists():
+            return
+        try:
+            for item in cache_path.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+            logger.info("Cache cleared.")
+        except Exception as e:
+            logger.error(f"Failed to clear cache: {e}")
 
-    def monitor(self):
-        logger.info(f"Monitoring container {self.container_name}...")
-        
-        while True:
-            container = self.get_container()
-            if not container:
-                break  # Exit if the container is not found
-            
-            if self.check_logs_for_inactivity(container):
-                if self.inactive_start_time is None:
-                    self.inactive_start_time = datetime.now()
-                
-                elapsed_inactive_time = datetime.now() - self.inactive_start_time
-                logger.info(f"Inactivity detected for {elapsed_inactive_time}")
+    # ---- Main loop ----
 
-                if elapsed_inactive_time >= self.inactivity_threshold:
-                    logger.info(f"No activity for {elapsed_inactive_time}, stopping container...")
-                    container.stop()
-                    # clear the cache
-                    try:
-                        logger.info("Clearing Stremio cache...")
-                        cleanup_command = "rm -rf /home/refa/stremio/stremio-server/stremio-cache/*"
-                        subprocess.run(cleanup_command, shell=True, check=True)
-                        logger.info("Cache cleared successfully.")
-                    except subprocess.CalledProcessError as e:
-                        logger.error(f"Failed to clear cache: {e}")
-                    # break
+    def run(self):
+        logger.info(
+            f"Monitor started — keyword='{CONTAINER_KEYWORD}', "
+            f"inactivity={INACTIVITY_MINUTES}m, interval={CHECK_INTERVAL_SECONDS}s"
+        )
+
+        while self.running:
+            try:
+                self._tick()
+            except docker.errors.NotFound:
+                logger.debug("Container disappeared, resetting state.")
+                self._reset_state()
+            except Exception as e:
+                logger.error(f"Unexpected error: {e}")
+
+            time.sleep(CHECK_INTERVAL_SECONDS)
+
+        logger.info("Monitor stopped.")
+
+    def _tick(self):
+        container = self._find_container()
+        if container is None:
+            logger.debug(f"No container matching '{CONTAINER_KEYWORD}' found. Waiting...")
+            self._reset_state()
+            return
+
+        container.reload()
+
+        if container.status != "running":
+            logger.debug(f"Container '{container.name}' is {container.status}.")
+            self._reset_state()
+            return
+
+        # --- Measure network activity ---
+        current_rx = self._get_network_rx_bytes(container)
+        if current_rx is None:
+            # Stats unavailable, skip this tick
+            return
+
+        has_activity = False
+        if self.prev_net_rx is not None:
+            delta = current_rx - self.prev_net_rx
+            has_activity = delta > NETWORK_THRESHOLD_BYTES
+        else:
+            # First measurement after (re)start — assume active
+            has_activity = True
+
+        self.prev_net_rx = current_rx
+
+        # --- Inactivity logic ---
+        if has_activity:
+            if self.inactive_since is not None:
+                logger.info("Network activity detected, resetting inactivity timer.")
+            self.inactive_since = None
+        else:
+            if self.inactive_since is None:
+                self.inactive_since = time.monotonic()
+                logger.info("No network activity. Starting inactivity timer.")
             else:
-                self.inactive_start_time = None  # Reset if activity is detected
+                elapsed = time.monotonic() - self.inactive_since
+                remaining = self.inactivity_seconds - elapsed
+                logger.info(f"Inactive for {elapsed:.0f}s ({remaining:.0f}s until shutdown).")
 
-            time.sleep(self.check_interval)
+                if elapsed >= self.inactivity_seconds:
+                    logger.warning(f"Inactivity threshold reached. Stopping '{container.name}'.")
+                    container.stop(timeout=15)
+                    self._clear_cache()
+                    self._reset_state()
+
+    def _reset_state(self):
+        self.inactive_since = None
+        self.prev_net_rx = None
 
 
 if __name__ == "__main__":
-    container_name = 'stremio'
-
-    client = docker.from_env()
-    containers = client.containers.list()
-
-    target_container = None
-    for container in containers:
-        if container_name in container.name:
-            target_container = container
-            logger.info(f"Found container: {container.name}")
-            break
-
-    if target_container:
-        monitor = ContainerMonitor(
-            container_name=target_container.name,
-            inactivity_threshold_minutes=30,  # Adjust as needed
-            check_interval_seconds=30  # Check logs every 30 seconds
-        )
-        monitor.monitor()
-    else:
-        logger.error(f'Cannot find container with name "{container_name}"')
+    ContainerMonitor().run()

@@ -1,96 +1,117 @@
-from flask import Flask, redirect, request
-import docker
 import os
 import sys
-from pathlib import Path
-import logging
 import subprocess
+import threading
 import time
+import logging
+from pathlib import Path
 
-# Add this constant at the top of the file with your other constants
-IMAGE_NAME = "stremio_stremio" # <-- !!! עדכן לשם האימג' המדויק שלך
+import docker
+from flask import Flask, redirect, request
 
+# --- Configuration via environment variables ---
+COMPOSE_FILE_PATH = Path(os.environ.get(
+    "LISTENER_COMPOSE_FILE",
+    str(Path(__file__).parent / "docker-compose.yml"),
+))
+CONTAINER_KEYWORD = os.environ.get("LISTENER_CONTAINER_KEYWORD", "stremio")
+HEALTH_URL = os.environ.get("LISTENER_HEALTH_URL", "http://localhost:11470/")
+STARTUP_TIMEOUT = int(os.environ.get("LISTENER_STARTUP_TIMEOUT", "60"))
+LISTEN_PORT = int(os.environ.get("LISTENER_PORT", "80"))
 
+# Detect docker compose (plugin) vs docker-compose (standalone)
+def _detect_compose_cmd():
+    if subprocess.run(["docker", "compose", "version"], capture_output=True).returncode == 0:
+        return ["docker", "compose"]
+    return ["docker-compose"]
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+COMPOSE_CMD = _detect_compose_cmd()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("web-listener")
+
 app = Flask(__name__)
 client = docker.from_env()
 
-COMPOSE_FILE_PATH = Path(__file__).parent / "docker-compose.yml"
-CONTAINER_NAME = "stremio_server"
+# Lock to prevent multiple simultaneous startup attempts
+_start_lock = threading.Lock()
 
-def is_container_running(keyword="stremio"):
-    """
-    Checks if a container with a name containing the specified keyword is running.
 
-    Args:
-        keyword (str): The keyword to search for in the container names.
-
-    Returns:
-        bool: True if a matching container is running, False otherwise.
-    """
+def is_container_running():
+    """Check if a container matching the keyword is running."""
     try:
-        # List only running containers for better performance
-        running_containers = client.containers.list(filters={"status": "running"})
-        for container in running_containers:
-            if keyword in container.name:
-                logger.info(f"Found running Stremio container: {container.name} (ID: {container.id})")
+        for c in client.containers.list(filters={"status": "running"}):
+            if CONTAINER_KEYWORD in c.name:
                 return True
-        # If the loop completes, no matching container was found
-        logger.info("No running container with 'stremio' in the name was found.")
-        return False
-    except docker.errors.DockerException as e:
-        logger.error(f"An error occurred while communicating with the Docker daemon: {e}")
         return False
     except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
+        logger.error(f"Docker error: {e}")
         return False
-        
+
+
+def wait_for_healthy(timeout):
+    """Poll the container health endpoint until it responds or timeout."""
+    import urllib.request
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(HEALTH_URL, timeout=3):
+                return True
+        except Exception:
+            time.sleep(1)
+    return False
+
 
 def start_container():
+    """Start the stremio container via docker-compose (thread-safe)."""
+    if not _start_lock.acquire(blocking=False):
+        # Another request is already starting the container — just wait
+        logger.info("Startup already in progress, waiting...")
+        with _start_lock:
+            return is_container_running()
+
     try:
         if not COMPOSE_FILE_PATH.exists():
-            logger.error(f"Docker compose file not found at {COMPOSE_FILE_PATH}")
+            logger.error(f"Compose file not found: {COMPOSE_FILE_PATH}")
             return False
 
-        # Check if the image needs to be built
-        try:
-            client.images.get(IMAGE_NAME)
-            logger.info(f"Image '{IMAGE_NAME}' already exists. Skipping build.")
-            # Command without build
-            command = ["docker-compose", "-f", str(COMPOSE_FILE_PATH), "up", "-d"]
-        except docker.errors.ImageNotFound:
-            logger.info(f"Image '{IMAGE_NAME}' not found. Building...")
-            # Command with build
-            command = ["docker-compose", "-f", str(COMPOSE_FILE_PATH), "up", "-d", "--build"]
-
-        result = subprocess.run(command, capture_output=True, text=True)
+        cmd = COMPOSE_CMD + ["-f", str(COMPOSE_FILE_PATH), "up", "-d"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"Error starting container with docker-compose: {result.stderr}")
+            logger.error(f"docker-compose failed: {result.stderr}")
             return False
-        
-        logger.info(f"docker-compose up stdout: {result.stdout}")
-        time.sleep(5) # Give container time to start
+
+        logger.info("Container starting, waiting for healthy response...")
+        if not wait_for_healthy(STARTUP_TIMEOUT):
+            logger.error("Container did not become healthy in time.")
+            return False
+
+        logger.info("Container is healthy.")
         return True
     except Exception as e:
-        logger.error(f"An unexpected error occurred during container start: {e}")
+        logger.error(f"Startup error: {e}")
         return False
+    finally:
+        _start_lock.release()
 
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
 def catch_all(path):
     if not is_container_running():
-        logger.info("Container not running. Starting...")
+        logger.info("Container not running, starting...")
         if not start_container():
-            return "Failed to start Stremio container.", 500
-        logger.info("Container started successfully.")
-    scheme = 'https'
-    host = request.headers.get('Host', '').split(':')[0]
-    return redirect(f"{scheme}://{host}/{path}", code=307)
+            return "Failed to start Stremio container.", 503
+
+    host = request.headers.get("Host", "").split(":")[0]
+    return redirect(f"https://{host}/{path}", code=307)
+
 
 if __name__ == "__main__":
     if os.geteuid() != 0:
-        logger.error("This script must be run as root to bind to port 80.")
+        logger.error("Must run as root to bind to port 80.")
         sys.exit(1)
-    app.run(host='0.0.0.0', port=80, debug=False)
+    app.run(host="0.0.0.0", port=LISTEN_PORT, debug=False)
